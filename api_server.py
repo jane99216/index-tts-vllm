@@ -14,6 +14,11 @@ import asyncio
 import time
 import numpy as np
 import soundfile as sf
+import uuid
+
+import torch
+from fastapi import HTTPException
+from vllm import SamplingParams
 
 from indextts.infer_vllm import IndexTTS
 
@@ -22,7 +27,11 @@ tts = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global tts
-    tts = IndexTTS(model_dir=args.model_dir, gpu_memory_utilization=args.gpu_memory_utilization)
+    tts = IndexTTS(
+        model_dir=args.model_dir,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        vllm_api_url=args.vllm_api_url,
+    )
 
     current_file_path = os.path.abspath(__file__)
     cur_dir = os.path.dirname(current_file_path)
@@ -35,9 +44,11 @@ async def lifespan(app: FastAPI):
             for audio_path in audio_paths:
                 audio_paths_.append(os.path.join(cur_dir, audio_path))
             tts.registry_speaker(speaker, audio_paths_)
-    yield
-    # Clean up the ML models and release the resources
-    # ml_models.clear()
+    try:
+        yield
+    finally:
+        if hasattr(tts, "aclose"):
+            await tts.aclose()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -145,6 +156,51 @@ async def tts_api(request: Request):
 
 
 
+@app.post("/internal/vllm/generate")
+async def vllm_generate(request: Request):
+    if tts is None:
+        raise HTTPException(status_code=503, detail="TTS model not initialized")
+
+    payload = await request.json()
+    prompt = payload.get("prompt")
+    if prompt is None:
+        raise HTTPException(status_code=400, detail="Missing prompt payload")
+
+    multi_modal = prompt.get("multi_modal_data")
+    if isinstance(multi_modal, dict):
+        audio_section = multi_modal.get("audio")
+        if isinstance(audio_section, dict) and "audio_embeds" in audio_section:
+            converted = []
+            for embed in audio_section["audio_embeds"]:
+                converted.append(torch.tensor(embed, dtype=torch.float32))
+            audio_section["audio_embeds"] = converted
+
+    sampling_dict = payload.get("sampling_params", {})
+    filtered_params = {
+        key: value
+        for key, value in sampling_dict.items()
+        if not key.startswith("_") and key not in {"output_kind", "output_text_buffer_length"}
+    }
+    sampling_params = SamplingParams(**filtered_params)
+
+    request_id = payload.get("request_id") or uuid.uuid4().hex
+
+    output_generator = tts.gpt.llm.generate(
+        prompt,
+        sampling_params=sampling_params,
+        request_id=request_id,
+    )
+    last_output = None
+    async for output in output_generator:
+        last_output = output
+
+    if last_output is None:
+        raise HTTPException(status_code=500, detail="Empty response from vLLM engine")
+
+    token_ids = last_output.outputs[0].token_ids
+    return JSONResponse({"token_ids": token_ids})
+
+
 @app.get("/audio/voices")
 async def tts_voices():
     """ additional function to provide the list of available voices, in the form of JSON """
@@ -199,6 +255,12 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=6006)
     parser.add_argument("--model_dir", type=str, default="/path/to/IndexTeam/Index-TTS")
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.25)
+    parser.add_argument(
+        "--vllm_api_url",
+        type=str,
+        default=None,
+        help="Base URL of a remote vLLM inference service. When provided, GPT inference is proxied over HTTP.",
+    )
     args = parser.parse_args()
 
     uvicorn.run(app=app, host=args.host, port=args.port)

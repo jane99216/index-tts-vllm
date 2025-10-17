@@ -117,6 +117,7 @@ python api_server_v2.py
 - `--host`: 服务ip地址，默认为 `0.0.0.0`
 - `--port`: 服务端口，默认为 `6006`
 - `--gpu_memory_utilization`: vllm 显存占用率，默认设置为 `0.25`
+- `--vllm_api_url`: 当提供远程 vLLM 推理服务的地址时，GPT 推理将通过 HTTP 代理到远端（无需在本地加载 GPT 模型）
 
 ### API 请求示例
 - v1/1.5 请参考 `api_example.py`
