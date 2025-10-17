@@ -20,6 +20,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 from indextts.BigVGAN.models import BigVGAN as Generator
 from indextts.gpt.model_vllm import UnifiedVoice
+from indextts.vllm_http_client import VLLMHTTPClient
 from indextts.utils.checkpoint import load_checkpoint
 from indextts.utils.feature_extractors import MelSpectrogramFeatures
 
@@ -65,7 +66,13 @@ def trim_and_pad_silence(wav_data, threshold=1000, min_silence=int(24000*0.4)):
 
 class IndexTTS:
     def __init__(
-        self, model_dir="checkpoints", is_fp16=True, device=None, use_cuda_kernel=None, gpu_memory_utilization=0.25
+        self,
+        model_dir="checkpoints",
+        is_fp16=True,
+        device=None,
+        use_cuda_kernel=None,
+        gpu_memory_utilization=0.25,
+        vllm_api_url: str | None = None,
     ):
         """
         Args:
@@ -99,18 +106,23 @@ class IndexTTS:
         self.dtype = torch.float16 if self.is_fp16 else None
         self.stop_mel_token = self.cfg.gpt.stop_mel_token
 
-        from vllm.engine.arg_utils import AsyncEngineArgs
-        from vllm.v1.engine.async_llm import AsyncLLM
+        self._remote_vllm_client: VLLMHTTPClient | None = None
+        if vllm_api_url:
+            self._remote_vllm_client = VLLMHTTPClient(vllm_api_url)
+            indextts_vllm = self._remote_vllm_client
+        else:
+            from vllm.engine.arg_utils import AsyncEngineArgs
+            from vllm.v1.engine.async_llm import AsyncLLM
 
-        vllm_dir = os.path.join(model_dir, "gpt")
-        engine_args = AsyncEngineArgs(
-            model=vllm_dir,
-            tensor_parallel_size=1,
-            dtype="auto",
-            gpu_memory_utilization=gpu_memory_utilization,
-            # enforce_eager=True,
-        )
-        indextts_vllm = AsyncLLM.from_engine_args(engine_args)
+            vllm_dir = os.path.join(model_dir, "gpt")
+            engine_args = AsyncEngineArgs(
+                model=vllm_dir,
+                tensor_parallel_size=1,
+                dtype="auto",
+                gpu_memory_utilization=gpu_memory_utilization,
+                # enforce_eager=True,
+            )
+            indextts_vllm = AsyncLLM.from_engine_args(engine_args)
 
         self.gpt = UnifiedVoice(indextts_vllm, **self.cfg.gpt, model_dir=model_dir)
         self.gpt_path = os.path.join(self.model_dir, self.cfg.gpt_checkpoint)
@@ -151,6 +163,10 @@ class IndexTTS:
         print(">> bpe model loaded from:", self.bpe_path)
 
         self.speaker_dict = {}
+
+    async def aclose(self):
+        if self._remote_vllm_client is not None:
+            await self._remote_vllm_client.close()
     
     def remove_long_silence(self, codes: list, latent: torch.Tensor, max_consecutive=15, silent_token=52):
         assert latent.dim() == 3 and latent.size(0) == 1, "Latent should be (1, seq_len, dim)"

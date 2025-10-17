@@ -103,6 +103,7 @@ python api_server_v2.py
 - `--host`: Service IP address, defaults to `0.0.0.0`
 - `--port`: Service port, defaults to `6006`
 - `--gpu_memory_utilization`: vllm GPU memory utilization, defaults to `0.25`
+- `--vllm_api_url`: When set to the base URL of a remote vLLM inference service, GPT inference is delegated over HTTP (no local GPT loading required)
 
 ### API Request Examples
 - For v1/1.5, please refer to `api_example.py`

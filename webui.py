@@ -22,6 +22,12 @@ parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to run the
 parser.add_argument("--version", type=str, default="1.0", help="Host to run the web UI on")
 parser.add_argument("--model_dir", type=str, default="", help="Model checkpoints directory")
 parser.add_argument("--gpu_memory_utilization", type=float, default=0.25, help="Port to run the web UI on")
+parser.add_argument(
+    "--vllm_api_url",
+    type=str,
+    default=None,
+    help="Base URL of a remote vLLM inference service. When provided, GPT inference is proxied over HTTP.",
+)
 cmd_args = parser.parse_args()
 
 CURRENT_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -52,7 +58,11 @@ def update_prompt_audio():
 
 
 if __name__ == "__main__":
-    tts = IndexTTS(model_dir=model_dir, gpu_memory_utilization=cmd_args.gpu_memory_utilization)
+    tts = IndexTTS(
+        model_dir=model_dir,
+        gpu_memory_utilization=cmd_args.gpu_memory_utilization,
+        vllm_api_url=cmd_args.vllm_api_url,
+    )
 
     with gr.Blocks() as demo:
         mutex = threading.Lock()
