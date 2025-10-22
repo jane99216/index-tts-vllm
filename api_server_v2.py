@@ -20,7 +20,16 @@ tts = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global tts
-    tts = IndexTTS2(model_dir=args.model_dir, is_fp16=args.is_fp16, gpu_memory_utilization=args.gpu_memory_utilization)
+    tts = IndexTTS2(
+        model_dir=args.model_dir,
+        is_fp16=args.is_fp16,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        use_openai_server=args.use_openai_server,
+        openai_api_base=args.openai_api_base,
+        openai_model=args.openai_model,
+        openai_api_key=args.openai_api_key,
+        openai_timeout=args.openai_timeout,
+    )
     yield
 
 
@@ -128,6 +137,11 @@ if __name__ == "__main__":
     parser.add_argument("--model_dir", type=str, default="checkpoints/IndexTTS-2-vLLM", help="Model checkpoints directory")
     parser.add_argument("--is_fp16", action="store_true", default=False, help="Fp16 infer")
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.25)
+    parser.add_argument("--use_openai_server", action="store_true", help="Use OpenAI-compatible vLLM service")
+    parser.add_argument("--openai_api_base", type=str, default=None, help="OpenAI-compatible service base url")
+    parser.add_argument("--openai_model", type=str, default=None, help="Model name served by the OpenAI-compatible service")
+    parser.add_argument("--openai_api_key", type=str, default=None, help="API key for the OpenAI-compatible service")
+    parser.add_argument("--openai_timeout", type=float, default=120.0, help="HTTP timeout when calling the OpenAI-compatible service")
     parser.add_argument("--verbose", action="store_true", default=False, help="Enable verbose mode")
     args = parser.parse_args()
     

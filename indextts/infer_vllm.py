@@ -3,7 +3,7 @@ import re
 import time
 from subprocess import CalledProcessError
 import traceback
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import sentencepiece as spm
@@ -22,6 +22,7 @@ from indextts.BigVGAN.models import BigVGAN as Generator
 from indextts.gpt.model_vllm import UnifiedVoice
 from indextts.utils.checkpoint import load_checkpoint
 from indextts.utils.feature_extractors import MelSpectrogramFeatures
+from indextts.utils.openai_vllm_client import OpenAIVLLMClient
 
 from indextts.utils.front import TextNormalizer, TextTokenizer
 
@@ -65,7 +66,17 @@ def trim_and_pad_silence(wav_data, threshold=1000, min_silence=int(24000*0.4)):
 
 class IndexTTS:
     def __init__(
-        self, model_dir="checkpoints", is_fp16=True, device=None, use_cuda_kernel=None, gpu_memory_utilization=0.25
+        self,
+        model_dir="checkpoints",
+        is_fp16=True,
+        device=None,
+        use_cuda_kernel=None,
+        gpu_memory_utilization=0.25,
+        use_openai_server: bool = False,
+        openai_api_base: Optional[str] = None,
+        openai_model: Optional[str] = None,
+        openai_api_key: Optional[str] = None,
+        openai_timeout: float = 120.0,
     ):
         """
         Args:
@@ -99,18 +110,28 @@ class IndexTTS:
         self.dtype = torch.float16 if self.is_fp16 else None
         self.stop_mel_token = self.cfg.gpt.stop_mel_token
 
-        from vllm.engine.arg_utils import AsyncEngineArgs
-        from vllm.v1.engine.async_llm import AsyncLLM
+        if use_openai_server:
+            if openai_model is None:
+                raise ValueError("openai_model must be provided when using the OpenAI server mode")
+            indextts_vllm = OpenAIVLLMClient(
+                base_url=openai_api_base or "http://127.0.0.1:8000",
+                model=openai_model,
+                api_key=openai_api_key,
+                timeout=openai_timeout,
+            )
+        else:
+            from vllm.engine.arg_utils import AsyncEngineArgs
+            from vllm.v1.engine.async_llm import AsyncLLM
 
-        vllm_dir = os.path.join(model_dir, "gpt")
-        engine_args = AsyncEngineArgs(
-            model=vllm_dir,
-            tensor_parallel_size=1,
-            dtype="auto",
-            gpu_memory_utilization=gpu_memory_utilization,
-            # enforce_eager=True,
-        )
-        indextts_vllm = AsyncLLM.from_engine_args(engine_args)
+            vllm_dir = os.path.join(model_dir, "gpt")
+            engine_args = AsyncEngineArgs(
+                model=vllm_dir,
+                tensor_parallel_size=1,
+                dtype="auto",
+                gpu_memory_utilization=gpu_memory_utilization,
+                # enforce_eager=True,
+            )
+            indextts_vllm = AsyncLLM.from_engine_args(engine_args)
 
         self.gpt = UnifiedVoice(indextts_vllm, **self.cfg.gpt, model_dir=model_dir)
         self.gpt_path = os.path.join(self.model_dir, self.cfg.gpt_checkpoint)
