@@ -8,6 +8,7 @@ gradio
 ninja
 modelscope
 munch==4.0.0
+httpx
 
 WeTextProcessing; platform_machine != "Darwin"
 wetext; platform_system == "Darwin"

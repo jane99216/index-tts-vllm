@@ -22,6 +22,11 @@ parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to run the
 parser.add_argument("--version", type=str, default="1.0", help="Host to run the web UI on")
 parser.add_argument("--model_dir", type=str, default="", help="Model checkpoints directory")
 parser.add_argument("--gpu_memory_utilization", type=float, default=0.25, help="Port to run the web UI on")
+parser.add_argument("--use_openai_server", action="store_true", help="Use OpenAI-compatible vLLM service")
+parser.add_argument("--openai_api_base", type=str, default=None, help="OpenAI-compatible service base url")
+parser.add_argument("--openai_model", type=str, default=None, help="Model name served by the OpenAI-compatible service")
+parser.add_argument("--openai_api_key", type=str, default=None, help="API key for the OpenAI-compatible service")
+parser.add_argument("--openai_timeout", type=float, default=120.0, help="HTTP timeout when calling the OpenAI-compatible service")
 cmd_args = parser.parse_args()
 
 CURRENT_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -52,7 +57,15 @@ def update_prompt_audio():
 
 
 if __name__ == "__main__":
-    tts = IndexTTS(model_dir=model_dir, gpu_memory_utilization=cmd_args.gpu_memory_utilization)
+    tts = IndexTTS(
+        model_dir=model_dir,
+        gpu_memory_utilization=cmd_args.gpu_memory_utilization,
+        use_openai_server=cmd_args.use_openai_server,
+        openai_api_base=cmd_args.openai_api_base,
+        openai_model=cmd_args.openai_model,
+        openai_api_key=cmd_args.openai_api_key,
+        openai_timeout=cmd_args.openai_timeout,
+    )
 
     with gr.Blocks() as demo:
         mutex = threading.Lock()
